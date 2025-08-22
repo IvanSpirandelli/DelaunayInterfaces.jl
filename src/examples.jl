@@ -126,7 +126,7 @@ function show_example(
     
     # (FIXED) Print the example's ID, as the 'name' field was removed.
     println("Displaying example: :$(ex.id)")
-    display(TopologicalInterfaces.get_interface_and_multicolored_tetrahedron_visualization(
+    display(TopologicalInterfaces.visualize_interface(
         ex.points,
         ex.labels;
         show_mc_edges = show_mc_edges,

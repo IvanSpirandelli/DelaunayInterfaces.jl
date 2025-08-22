@@ -3,75 +3,13 @@ using GLMakie.Makie.GeometryBasics
 using GLMakie.Colors
 
 #================================================================================#
-#                         INTERNAL HELPER FUNCTIONS                              #
-#================================================================================#
-
-function _compute_and_prepare_mesh_data(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64}; center_point=nothing)
-    bcs, filtration = get_barycentric_subdivision_and_filtration(points, labels, radii)
-    
-    # Extract faces (triangles) and vertex colors from the filtration data
-    faces = [TriangleFace(e[1]) for e in filtration if length(e[1]) == 3]
-    mesh_colors = [e[2] for e in filtration if length(e[1]) == 1]
-    
-    # Convert barycentric coordinates to Point3f
-    bcs_points = [Point3f(bc) for bc in bcs]
-    
-    # Center the points if a center_point is provided
-    if !isnothing(center_point)
-        bcs_points .-= center_point
-    end
-    
-    mesh = GeometryBasics.Mesh(bcs_points, faces)
-    
-    return mesh, mesh_colors, bcs_points
-end
-
-function _prepare_mc_edge_visuals(points::Vector{Vector{Float64}}, labels::Vector{Int}, mc_tets, color_map; center_point=nothing)
-    # Helper to get all 6 edges from a tetrahedron's vertex indices
-    get_edges(tet) = [(tet[1], tet[2]), (tet[1], tet[3]), (tet[1], tet[4]), 
-                      (tet[2], tet[3]), (tet[2], tet[4]), (tet[3], tet[4])]
-
-    # Convert original points to Point3f and center if needed
-    points3f = [Point3f(p) for p in points]
-    if !isnothing(center_point)
-        points3f .-= center_point
-    end
-
-    edge_points = Point3f[]
-    edge_colors = RGBf[]
-
-    for tet in mc_tets
-        for (p1_idx, p2_idx) in get_edges(tet)
-            # Add the start and end points of the edge
-            push!(edge_points, points3f[p1_idx], points3f[p2_idx])
-            
-            # Add the start and end colors for the gradient
-            color1 = color_map[labels[p1_idx]]
-            color2 = color_map[labels[p2_idx]]
-            push!(edge_colors, color1, color2)
-        end
-    end
-    
-    return edge_points, edge_colors
-end
-
-function _plot_barycenters!(scene, bcs_points; markersize=15)
-    scatter!(scene, bcs_points, color=:black, markersize=markersize, overdraw=true)
-    # Add text labels for each barycenter index
-    for (i, bc) in enumerate(bcs_points)
-        text!(scene, bc; text="$(i)", fontsize=15, color=:red, overdraw=true, align=(:center, :center))
-    end
-end
-
-
-#================================================================================#
 #                           PUBLIC API FUNCTIONS                                 #
 #================================================================================#
 
 function visualize_interface_sequence(
     points_sequence::Vector{Vector{Vector{Float64}}}, 
     labels_sequence::Vector{Vector{Int}},
-    radii_sequence::Vector{Vector{Float64}} = []; 
+    radii_sequence::Vector{Vector{Float64}} = Vector{Vector{Float64}}(); 
     show_wireframe::Bool = false,
     show_points::Bool = true,
     show_edges::Bool = true,
@@ -169,79 +107,10 @@ function visualize_interface_sequence(
     return f
 end
 
-"""
-Visualizes a single, static interface mesh.
-"""
-function get_interface_visualization(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = []; show_wireframe = false, colormap = :viridis)
-    # 1. Compute mesh data (no centering for this static view)
-    msh, clr, _ = _compute_and_prepare_mesh_data(points, labels, radii)
 
-    # 2. Determine color range for the mesh
-    min_v, max_v = isempty(clr) ? (0.0, 1.0) : (minimum(clr), maximum(clr))
-    
-    # 3. Setup figure and scene
-    f = Figure(fontsize=12)
-    # The LScene is placed in the first row
-    i_sc = LScene(f[1, 1], show_axis=false, scenekw=(lights=[AmbientLight(RGBf(1.0, 1.0, 1.0))],))
-    
-    # 4. Plot mesh and CAPTURE the plot object for the colorbar
-    mesh_plot = mesh!(i_sc, msh, color=clr, colorrange=(min_v, max_v), colormap=colormap)
-    if show_wireframe
-        wireframe!(i_sc, msh, color=:white, linewidth=1)
-    end
-
-    # 5. Add a horizontal colorbar at the bottom
-    Colorbar(f[2, 1],          
-             mesh_plot,         
-             label = "Value",   
-             vertical = false,  # Make the colorbar horizontal
-             flipaxis = false)  # Keep the label on the default side
-
-    # 6. Optional: Adjust the layout to make the colorbar row smaller
-    rowsize!(f.layout, 2, 30) # Sets the height of the second row to 30 pixels
-    
-    return f
-end
-
-"""
-Visualizes a single, static interface with options to show multicolored tetrahedra and barycenters.
-"""
-function get_interface_and_multicolored_tetrahedron_visualization(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = []; show_mc_edges = false, show_wireframe = false, show_barycenters = false, interface_colormap = :viridis)
-    # 1. Setup figure and scene
-    f = Figure(fontsize=12)
-    i_sc = LScene(f[1, 1], show_axis=false, scenekw=(lights=[AmbientLight(RGBf(1.0, 1.0, 1.0))],))
-
-    # 2. Compute and plot the interface mesh
-    msh, clr, bcs_points = _compute_and_prepare_mesh_data(points, labels, radii)
-    min_v, max_v = isempty(clr) ? (0.0, 1.0) : (minimum(clr), maximum(clr))
-    
-    mesh!(i_sc, msh, color=clr, colorrange=(min_v, max_v), colormap=interface_colormap)
-    if show_wireframe
-        wireframe!(i_sc, msh, color=:white, linewidth=1)
-    end
-
-    # 3. Plot barycenters if requested
-    if show_barycenters
-        _plot_barycenters!(i_sc, bcs_points, markersize=15)
-    end
-
-    # 4. Compute and plot multicolored edges if requested
-    if show_mc_edges
-        color_map = let
-            cm = cgrad(:Accent_6, 6, categorical=true)
-            Dict(1 => cm[1], 2 => cm[2], 3 => cm[3], 4 => cm[6])
-        end
-        
-        mc_tets = get_multichromatic_tetrahedra(points, labels)
-        edge_points, edge_colors = _prepare_mc_edge_visuals(points, labels, mc_tets, color_map)
-        
-        linesegments!(i_sc, edge_points, color=edge_colors, linewidth=2)
-    end
-    
-    return f
-end
-
-function visualize_interface(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = []; show_wireframe = false, colormap = :viridis)
+function visualize_interface(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = Vector{Float64}(); 
+    show_wireframe = false, interface_colormap = :viridis, show_barycenters = true,
+    show_mc_edges = true)
     f = Figure(fontsize=12)
     i_sc = LScene(f[1, 1], show_axis=false, scenekw=(lights=[AmbientLight(RGBf(1.0, 1.0, 1.0))],))
     _populate_interface_scene!(
@@ -250,12 +119,14 @@ function visualize_interface(points::Vector{Vector{Float64}}, labels::Vector{Int
         labels, 
         radii; 
         show_wireframe=show_wireframe, 
-        interface_colormap=colormap
+        interface_colormap=interface_colormap,
+        show_barycenters=show_barycenters,
+        show_mc_edges=show_mc_edges
     )
     f
 end
 
-function visualize_molecules(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = []; show_wireframe = false, colormap = :Accent_6)
+function visualize_molecules(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = Vector{Float64}(); show_wireframe = false, molecules_colormap = :Accent_6)
     f = Figure(fontsize=12)
     i_sc = LScene(f[1, 1], show_axis=false,)
     _populate_molecules_scene!(
@@ -263,50 +134,9 @@ function visualize_molecules(points::Vector{Vector{Float64}}, labels::Vector{Int
         points, 
         labels, 
         radii; 
-        colormap=colormap
+        molecules_colormap=molecules_colormap
     )
     f
-end
-
-function _populate_molecules_scene!(
-    lscene::LScene, 
-    points::Vector{Vector{Float64}}, 
-    labels::Vector{Int},
-    radii::Vector{Float64}; 
-    colormap = :Accent_6
-)
-    if isempty(points) || !(length(points) == length(radii) == length(labels))
-        return
-    end
-
-    meshscatter!(lscene, 
-        [Point3f(p) for p in points], 
-        marker = Sphere(Point3f(0), 1),
-        markersize = radii,
-        color = labels,
-        colormap = colormap
-    )
-end
-
-function _populate_interface_scene!(
-    lscene::LScene, 
-    points::Vector{Vector{Float64}}, 
-    labels::Vector{Int}, 
-    radii::Vector{Float64};
-    show_wireframe = false, 
-    interface_colormap = :viridis
-)
-    # 1. Compute mesh data (no centering for this static view)
-    msh, clr, _ = _compute_and_prepare_mesh_data(points, labels, radii)
-
-    # 2. Determine color range for the mesh
-    min_v, max_v = isempty(clr) ? (0.0, 1.0) : (minimum(clr), maximum(clr))
-    
-    # 4. Plot mesh and CAPTURE the plot object for the colorbar
-    mesh_plot = mesh!(lscene, msh, color=clr, colorrange=(min_v, max_v), colormap=interface_colormap, shading = false)
-    if show_wireframe
-        wireframe!(lscene, msh, color=:white, linewidth=1)
-    end
 end
 
 function visualize_overlay(
@@ -464,4 +294,134 @@ function visualize_molecules_and_interface(
 
     #cameracontrols!(ax_int.scene, cameracontrols(ax_mol.scene))
     return f
+end
+
+
+#================================================================================#
+#                         INTERNAL HELPER FUNCTIONS                              #
+#================================================================================#
+
+function _compute_and_prepare_mesh_data(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64}; center_point=nothing)
+    bcs, filtration = get_barycentric_subdivision_and_filtration(points, labels, radii)
+    
+    # Extract faces (triangles) and vertex colors from the filtration data
+    faces = [TriangleFace(e[1]) for e in filtration if length(e[1]) == 3]
+    mesh_colors = [e[2] for e in filtration if length(e[1]) == 1]
+    
+    # Convert barycentric coordinates to Point3f
+    bcs_points = [Point3f(bc) for bc in bcs]
+    
+    # Center the points if a center_point is provided
+    if !isnothing(center_point)
+        bcs_points .-= center_point
+    end
+    
+    mesh = GeometryBasics.Mesh(bcs_points, faces)
+    
+    return mesh, mesh_colors, bcs_points
+end
+
+function _prepare_mc_edge_visuals(points::Vector{Vector{Float64}}, labels::Vector{Int}, mc_tets, color_map; center_point=nothing)
+    # Helper to get all 6 edges from a tetrahedron's vertex indices
+    get_edges(tet) = [(tet[1], tet[2]), (tet[1], tet[3]), (tet[1], tet[4]), 
+                      (tet[2], tet[3]), (tet[2], tet[4]), (tet[3], tet[4])]
+
+    # Convert original points to Point3f and center if needed
+    points3f = [Point3f(p) for p in points]
+    if !isnothing(center_point)
+        points3f .-= center_point
+    end
+
+    edge_points = Point3f[]
+    edge_colors = RGBf[]
+
+    for tet in mc_tets
+        for (p1_idx, p2_idx) in get_edges(tet)
+            # Add the start and end points of the edge
+            push!(edge_points, points3f[p1_idx], points3f[p2_idx])
+            
+            # Add the start and end colors for the gradient
+            color1 = color_map[labels[p1_idx]]
+            color2 = color_map[labels[p2_idx]]
+            push!(edge_colors, color1, color2)
+        end
+    end
+    
+    return edge_points, edge_colors
+end
+
+function _populate_molecules_scene!(
+    lscene::LScene, 
+    points::Vector{Vector{Float64}}, 
+    labels::Vector{Int},
+    radii::Vector{Float64}; 
+    molecules_colormap = :Accent_6
+)
+    if isempty(points) || !(length(points) == length(radii) == length(labels))
+        return
+    end
+
+    meshscatter!(lscene, 
+        [Point3f(p) for p in points], 
+        marker = Sphere(Point3f(0), 1),
+        markersize = radii,
+        color = labels,
+        colormap = molecules_colormap
+    )
+end
+
+function _populate_interface_scene!(
+    lscene::LScene, 
+    points::Vector{Vector{Float64}}, 
+    labels::Vector{Int}, 
+    radii::Vector{Float64};
+    show_wireframe = false, 
+    show_barycenters = false,
+    show_mc_edges = false,
+    interface_colormap = :viridis
+)
+    # 1. Compute mesh data (no centering for this static view)
+    msh, clr, bcs_points = _compute_and_prepare_mesh_data(points, labels, radii)
+
+    # 2. Determine color range for the mesh
+    min_v, max_v = isempty(clr) ? (0.0, 1.0) : (minimum(clr), maximum(clr))
+    
+    # 4. Plot mesh and CAPTURE the plot object for the colorbar
+    mesh_plot = mesh!(lscene, msh, color=clr, colorrange=(min_v, max_v), colormap=interface_colormap, shading = false)
+    if show_wireframe
+        wireframe!(lscene, msh, color=:white, linewidth=1)
+    end
+
+    if show_barycenters
+        _populate_scene_with_barycenters!(lscene, bcs_points)
+    end
+
+    if show_mc_edges
+        _populate_scene_with_multicolored_edges(lscene, points, labels, radii)
+    end
+end
+
+function _populate_scene_with_barycenters!(scene, bcs_points; markersize=15)
+    scatter!(scene, bcs_points, color=:black, markersize=markersize, overdraw=true)
+    # Add text labels for each barycenter index
+    for (i, bc) in enumerate(bcs_points)
+        text!(scene, bc; text="$(i)", fontsize=15, color=:red, overdraw=true, align=(:center, :center))
+    end
+end
+
+function _populate_scene_with_multicolored_edges(
+    lscene::LScene, 
+    points::Vector{Vector{Float64}}, 
+    labels::Vector{Int}, 
+    radii::Vector{Float64},
+)
+    color_map = let
+        cm = cgrad(:Accent_6, 6, categorical=true)
+        Dict(1 => cm[1], 2 => cm[2], 3 => cm[3], 4 => cm[6])
+    end
+    
+    mc_tets = length(radii) == length(labels) ? get_multichromatic_tetrahedra(points, labels, radii) : get_multichromatic_tetrahedra(points, labels)
+    edge_points, edge_colors = _prepare_mc_edge_visuals(points, labels, mc_tets, color_map)
+    
+    linesegments!(lscene, edge_points, color=edge_colors, linewidth=2)
 end
