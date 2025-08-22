@@ -1,2 +1,5 @@
 Manifest.toml
+CondaPkg.toml
 *.DS_Store
+.CondaPkg
+python_venv/

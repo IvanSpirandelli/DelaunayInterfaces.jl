@@ -1,29 +1,13 @@
 using GLMakie
 using GLMakie.Makie.GeometryBasics
+using GLMakie.Colors
 
 #================================================================================#
 #                         INTERNAL HELPER FUNCTIONS                              #
 #================================================================================#
 
-"""
-    _compute_and_prepare_mesh_data(points, labels; center_point=nothing)
-
-Internal function to compute the barycentric subdivision and generate a renderable mesh.
-
-It optionally centers the mesh vertices around a given `center_point`.
-
-# Arguments
-- `points`: The list of atom coordinates.
-- `labels`: The list of atom labels.
-- `center_point`: An optional `Point3f` to be subtracted from each mesh vertex.
-
-# Returns
-- `GeometryBasics.Mesh`: The renderable interface mesh.
-- `Vector{Float64}`: A vector of scalar values for coloring the mesh vertices.
-- `Vector{Point3f}`: The coordinates of the barycenter vertices (potentially centered).
-"""
-function _compute_and_prepare_mesh_data(points::Vector{Vector{Float64}}, labels::Vector{Int}; center_point=nothing)
-    bcs, filtration = get_barycentric_subdivision_and_filtration(points, labels)
+function _compute_and_prepare_mesh_data(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64}; center_point=nothing)
+    bcs, filtration = get_barycentric_subdivision_and_filtration(points, labels, radii)
     
     # Extract faces (triangles) and vertex colors from the filtration data
     faces = [TriangleFace(e[1]) for e in filtration if length(e[1]) == 3]
@@ -42,25 +26,6 @@ function _compute_and_prepare_mesh_data(points::Vector{Vector{Float64}}, labels:
     return mesh, mesh_colors, bcs_points
 end
 
-"""
-    _prepare_mc_edge_visuals(points, labels, mc_tets, color_map; center_point=nothing)
-
-Internal function to prepare vertex and color data for rendering multicolored tetrahedron edges.
-
-This function creates two corresponding vectors: one for line segment endpoints and one for their
-colors, allowing for clean gradients to be rendered efficiently.
-
-# Arguments
-- `points`: The list of original atom coordinates.
-- `labels`: The list of atom labels.
-- `mc_tets`: The multicolored tetrahedra data.
-- `color_map`: A dictionary mapping labels to specific colors.
-- `center_point`: An optional `Point3f` to be subtracted from each point.
-
-# Returns
-- `Vector{Point3f}`: A flat vector of points for `linesegments!`.
-- `Vector{RGBf}`: A flat vector of colors corresponding to each point.
-"""
 function _prepare_mc_edge_visuals(points::Vector{Vector{Float64}}, labels::Vector{Int}, mc_tets, color_map; center_point=nothing)
     # Helper to get all 6 edges from a tetrahedron's vertex indices
     get_edges(tet) = [(tet[1], tet[2]), (tet[1], tet[3]), (tet[1], tet[4]), 
@@ -75,7 +40,7 @@ function _prepare_mc_edge_visuals(points::Vector{Vector{Float64}}, labels::Vecto
     edge_points = Point3f[]
     edge_colors = RGBf[]
 
-    for tet in eachrow(mc_tets)
+    for tet in mc_tets
         for (p1_idx, p2_idx) in get_edges(tet)
             # Add the start and end points of the edge
             push!(edge_points, points3f[p1_idx], points3f[p2_idx])
@@ -90,11 +55,6 @@ function _prepare_mc_edge_visuals(points::Vector{Vector{Float64}}, labels::Vecto
     return edge_points, edge_colors
 end
 
-"""
-    _plot_barycenters!(scene, bcs_points; markersize=15)
-
-Internal plotting function to draw barycenters as scatter points with index labels.
-"""
 function _plot_barycenters!(scene, bcs_points; markersize=15)
     scatter!(scene, bcs_points, color=:black, markersize=markersize, overdraw=true)
     # Add text labels for each barycenter index
@@ -108,36 +68,10 @@ end
 #                           PUBLIC API FUNCTIONS                                 #
 #================================================================================#
 
-"""
-    visualize_interface_sequence(
-        points_sequence::Vector{Vector{Vector{Float64}}}, 
-        labels_sequence::Vector{Vector{Int}}; 
-        show_wireframe::Bool = false,
-        show_points::Bool = true,
-        show_edges::Bool = true,
-        global_colorrange::Bool = true,
-        colormap = :viridis
-    )
-
-Constructs a comprehensive, interactive figure for a sequence of interfaces with clean gradient edges.
-
-This function pre-computes all visualization data for a smooth slider experience and includes several customizable options.
-
-# Arguments
-- `points_sequence`: A vector where each element is the list of points for one frame.
-- `labels_sequence`: A vector where each element is the list of labels for one frame.
-
-# Keyword Arguments
-- `show_wireframe::Bool`: If `true`, overlays a white wireframe on the interface mesh.
-- `show_points::Bool`: If `true`, displays the centered atom points.
-- `show_edges::Bool`: If `true`, displays the multicolored edges with clean color gradients.
-- `global_colorrange::Bool`: If `true`, the colormap is scaled globally across all frames. If `false`, it's scaled to each individual frame.
-- `colormap`: The colormap to use for the interface mesh (e.g., `:viridis`, `:plasma`).
-"""
-
 function visualize_interface_sequence(
     points_sequence::Vector{Vector{Vector{Float64}}}, 
-    labels_sequence::Vector{Vector{Int}}; 
+    labels_sequence::Vector{Vector{Int}},
+    radii_sequence::Vector{Vector{Float64}} = []; 
     show_wireframe::Bool = false,
     show_points::Bool = true,
     show_edges::Bool = true,
@@ -168,6 +102,7 @@ function visualize_interface_sequence(
     for i in 1:n_interfaces
         points = points_sequence[i]
         labels = labels_sequence[i]
+        radii = length(radii_sequence) > 0 ? radii_sequence[i] : Float64[]
 
         # 1. Center points for consistent visualization
         center = Point3f(sum(p -> Point3f(p), points) / length(points))
@@ -178,7 +113,7 @@ function visualize_interface_sequence(
         end
 
         # 2. Compute interface mesh using the helper function
-        mesh, mesh_colors, _ = _compute_and_prepare_mesh_data(points, labels, center_point=center)
+        mesh, mesh_colors, _ = _compute_and_prepare_mesh_data(points, labels, radii, center_point=center)
         all_meshes[i] = mesh
         all_mesh_colors[i] = mesh_colors
         
@@ -235,54 +170,49 @@ function visualize_interface_sequence(
 end
 
 """
-Visualizes a single interface, deriving labels from the number of atoms per molecule.
-"""
-function get_interface_visualization(points::Vector{Vector{Float64}}, n_atoms_per_mol::Int; show_wireframe = false, colormap = :viridis)
-    labels = get_labels(length(points), n_atoms_per_mol) 
-    return get_interface_visualization(points, labels, show_wireframe=show_wireframe, colormap=colormap)
-end
-
-"""
 Visualizes a single, static interface mesh.
 """
-function get_interface_visualization(points::Vector{Vector{Float64}}, labels::Vector{Int}; show_wireframe = false, colormap = :viridis)
+function get_interface_visualization(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = []; show_wireframe = false, colormap = :viridis)
     # 1. Compute mesh data (no centering for this static view)
-    msh, clr, _ = _compute_and_prepare_mesh_data(points, labels)
+    msh, clr, _ = _compute_and_prepare_mesh_data(points, labels, radii)
 
     # 2. Determine color range for the mesh
     min_v, max_v = isempty(clr) ? (0.0, 1.0) : (minimum(clr), maximum(clr))
     
     # 3. Setup figure and scene
     f = Figure(fontsize=12)
+    # The LScene is placed in the first row
     i_sc = LScene(f[1, 1], show_axis=false, scenekw=(lights=[AmbientLight(RGBf(1.0, 1.0, 1.0))],))
     
-    # 4. Plot mesh and optional wireframe
-    mesh!(i_sc, msh, color=clr, colorrange=(min_v, max_v), colormap=colormap)
+    # 4. Plot mesh and CAPTURE the plot object for the colorbar
+    mesh_plot = mesh!(i_sc, msh, color=clr, colorrange=(min_v, max_v), colormap=colormap)
     if show_wireframe
         wireframe!(i_sc, msh, color=:white, linewidth=1)
     end
+
+    # 5. Add a horizontal colorbar at the bottom
+    Colorbar(f[2, 1],          
+             mesh_plot,         
+             label = "Value",   
+             vertical = false,  # Make the colorbar horizontal
+             flipaxis = false)  # Keep the label on the default side
+
+    # 6. Optional: Adjust the layout to make the colorbar row smaller
+    rowsize!(f.layout, 2, 30) # Sets the height of the second row to 30 pixels
     
     return f
 end
 
 """
-Visualizes an interface with optional multicolored tetrahedra, deriving labels automatically.
-"""
-function get_interface_and_multicolored_tetrahedron_visualization(points::Vector{Vector{Float64}}, n_atoms_per_mol::Int; show_mc_edges = false, show_wireframe = false, show_barycenters = false, interface_colormap = :viridis)
-    labels = get_labels(length(points), n_atoms_per_mol) 
-    return get_interface_and_multicolored_tetrahedron_visualization(points, labels, show_mc_edges=show_mc_edges, show_wireframe=show_wireframe, show_barycenters=show_barycenters, interface_colormap=interface_colormap)
-end
-
-"""
 Visualizes a single, static interface with options to show multicolored tetrahedra and barycenters.
 """
-function get_interface_and_multicolored_tetrahedron_visualization(points::Vector{Vector{Float64}}, labels::Vector{Int}; show_mc_edges = false, show_wireframe = false, show_barycenters = false, interface_colormap = :viridis)
+function get_interface_and_multicolored_tetrahedron_visualization(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = []; show_mc_edges = false, show_wireframe = false, show_barycenters = false, interface_colormap = :viridis)
     # 1. Setup figure and scene
     f = Figure(fontsize=12)
     i_sc = LScene(f[1, 1], show_axis=false, scenekw=(lights=[AmbientLight(RGBf(1.0, 1.0, 1.0))],))
 
     # 2. Compute and plot the interface mesh
-    msh, clr, bcs_points = _compute_and_prepare_mesh_data(points, labels)
+    msh, clr, bcs_points = _compute_and_prepare_mesh_data(points, labels, radii)
     min_v, max_v = isempty(clr) ? (0.0, 1.0) : (minimum(clr), maximum(clr))
     
     mesh!(i_sc, msh, color=clr, colorrange=(min_v, max_v), colormap=interface_colormap)
@@ -308,5 +238,230 @@ function get_interface_and_multicolored_tetrahedron_visualization(points::Vector
         linesegments!(i_sc, edge_points, color=edge_colors, linewidth=2)
     end
     
+    return f
+end
+
+function visualize_interface(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = []; show_wireframe = false, colormap = :viridis)
+    f = Figure(fontsize=12)
+    i_sc = LScene(f[1, 1], show_axis=false, scenekw=(lights=[AmbientLight(RGBf(1.0, 1.0, 1.0))],))
+    _populate_interface_scene!(
+        i_sc, 
+        points, 
+        labels, 
+        radii; 
+        show_wireframe=show_wireframe, 
+        interface_colormap=colormap
+    )
+    f
+end
+
+function visualize_molecules(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = []; show_wireframe = false, colormap = :Accent_6)
+    f = Figure(fontsize=12)
+    i_sc = LScene(f[1, 1], show_axis=false,)
+    _populate_molecules_scene!(
+        i_sc, 
+        points, 
+        labels, 
+        radii; 
+        colormap=colormap
+    )
+    f
+end
+
+function _populate_molecules_scene!(
+    lscene::LScene, 
+    points::Vector{Vector{Float64}}, 
+    labels::Vector{Int},
+    radii::Vector{Float64}; 
+    colormap = :Accent_6
+)
+    if isempty(points) || !(length(points) == length(radii) == length(labels))
+        return
+    end
+
+    meshscatter!(lscene, 
+        [Point3f(p) for p in points], 
+        marker = Sphere(Point3f(0), 1),
+        markersize = radii,
+        color = labels,
+        colormap = colormap
+    )
+end
+
+function _populate_interface_scene!(
+    lscene::LScene, 
+    points::Vector{Vector{Float64}}, 
+    labels::Vector{Int}, 
+    radii::Vector{Float64};
+    show_wireframe = false, 
+    interface_colormap = :viridis
+)
+    # 1. Compute mesh data (no centering for this static view)
+    msh, clr, _ = _compute_and_prepare_mesh_data(points, labels, radii)
+
+    # 2. Determine color range for the mesh
+    min_v, max_v = isempty(clr) ? (0.0, 1.0) : (minimum(clr), maximum(clr))
+    
+    # 4. Plot mesh and CAPTURE the plot object for the colorbar
+    mesh_plot = mesh!(lscene, msh, color=clr, colorrange=(min_v, max_v), colormap=interface_colormap, shading = false)
+    if show_wireframe
+        wireframe!(lscene, msh, color=:white, linewidth=1)
+    end
+end
+
+function visualize_overlay(
+    points::Vector{Vector{Float64}}, 
+    labels::Vector{Int}, 
+    atom_radii::Vector{Float64},
+    sasa_radii::Vector{Float64};
+    molecule_colormap = :Blues_3,
+    interface_colormap = :viridis,
+    show_wireframe = false,
+    molecule_transparency = 0.025
+)
+    f = Figure(fontsize=12)
+
+    lscene = LScene(f[1, 1], show_axis=false)#, scenekw=(lights=[AmbientLight(RGBf(1.0, 1.0, 1.0))],))
+
+    _populate_interface_scene!(
+        lscene, 
+        points, 
+        labels, 
+        sasa_radii; 
+        show_wireframe=show_wireframe, 
+        interface_colormap=interface_colormap
+    )
+
+    if !isempty(points) && (length(points) == length(atom_radii) == length(labels))
+        meshscatter!(lscene, 
+            [Point3f(p) for p in points], 
+            marker = Sphere(Point3f(0), 1),
+            markersize = atom_radii,
+            color = labels,
+            colormap = (molecule_colormap, molecule_transparency),
+            transparency = molecule_transparency < 1.0
+        )
+    end
+
+    return f
+end
+
+function visualize_interactive_toggle(
+    points::Vector{Vector{Float64}}, 
+    labels::Vector{Int}, 
+    atom_radii::Vector{Float64},
+    sasa_radii::Vector{Float64};
+    molecule_colormap = :grays,
+    interface_colormap = :magma,
+    show_wireframe = false,
+    molecule_transparency = 1.0
+)
+    # --- 1. Setup Figure and Layout ---
+    f = Figure(fontsize=16)
+
+    lscene = LScene(f[1:4, 1:4], show_axis=false, scenekw = (camera = cam3d!,),)
+
+    # Create a grid layout for the UI controls on the right side
+    controls = f[1:4, 4] = GridLayout(tellwidth = false)
+    Label(controls[1, 1:2], "Molecules", fontsize=18, font=:bold)
+
+    # --- 2. Plot the Static Interface ---
+    _populate_interface_scene!(
+        lscene, 
+        points, 
+        labels, 
+        sasa_radii; 
+        show_wireframe=show_wireframe, 
+        interface_colormap=interface_colormap
+    )
+
+    # --- 3. Group Data and Plot Molecules Individually ---
+    unique_labels = sort(unique(labels))
+    molecule_plots = Dict{Int, Any}() # Dictionary to store plot objects for each label
+
+    categorical_colors = cgrad(molecule_colormap, length(unique_labels), categorical=true)
+
+    for (i, label) in enumerate(unique_labels)
+        # Find all indices corresponding to the current label
+        indices = findall(x -> x == label, labels)
+        
+        # Skip if no points found for this label
+        if isempty(indices)
+            continue
+        end
+
+        # Extract the data for the current group
+        group_points = [Point3f(p) for p in points[indices]]
+        group_radii = atom_radii[indices]
+        
+        # Plot this group and store the plot object in our dictionary
+        # We use the pre-calculated color for this group
+        molecule_plots[label] = if molecule_transparency >= 1.0
+            # OPAQUE rendering path
+            meshscatter!(lscene, group_points,
+                marker=Sphere(Point3f(0), 1),
+                markersize=group_radii,
+                color=categorical_colors[i],
+                transparency=false
+            )
+        else
+            # TRANSPARENT rendering path
+            meshscatter!(lscene, group_points,
+                marker=Sphere(Point3f(0), 1),
+                markersize=group_radii,
+                color=(categorical_colors[i], molecule_transparency),
+                transparency=true
+            )
+        end
+    end
+
+    # --- 4. Create UI Toggles and Link them to Plots ---
+    for (i, label) in enumerate(unique_labels)
+        # Create a toggle and a label for it
+        row = i + 1 # Start from the second row in the controls grid
+        toggle = Toggle(controls[row, 1], active=true)
+        Label(controls[row, 2], "Label $(label)", halign=:left)
+
+        # Link the toggle's state to the plot's visibility
+        # on(...) creates a listener that triggers when the toggle's state changes
+        on(toggle.active) do is_active
+            if haskey(molecule_plots, label)
+                molecule_plots[label].visible = is_active
+            end
+        end
+    end
+    
+    # Adjust column widths for a tidy layout
+    colsize!(f.layout, 2, Fixed(200)) # Give the controls a fixed width
+    rowgap!(controls, 10) # Add some space between the toggles
+
+    return f
+end
+
+function visualize_molecules_and_interface(
+    points::Vector{Vector{Float64}}, 
+    labels::Vector{Int},
+    radii::Vector{Float64};
+    molecule_colormap = :Accent_6,
+    interface_colormap = :viridis,
+    show_wireframe = false,
+)
+    f = Figure(fontsize=12)
+
+    ax_mol = LScene(f[1, 1], show_axis=false)#, scenekw=(lights=[AmbientLight(RGBf(1.0, 1.0, 1.0))],))
+    ax_int = LScene(f[1, 2], show_axis=false, scenekw=(lights=[AmbientLight(RGBf(1.0, 1.0, 1.0))],))
+
+    _populate_molecule_scene!(
+        ax_mol, points, labels, radii,
+        colormap=molecule_colormap
+    )
+
+    interface_plot = _populate_interface_scene!(
+        ax_int, points, labels, radii,
+        show_wireframe=show_wireframe,
+        interface_colormap=interface_colormap
+    )
+
+    #cameracontrols!(ax_int.scene, cameracontrols(ax_mol.scene))
     return f
 end

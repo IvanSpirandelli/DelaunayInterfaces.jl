@@ -1,7 +1,5 @@
 using GLMakie
 using GLMakie.Makie.GeometryBasics
-using GLMakie
-using GLMakie.Makie.GeometryBasics
 
 # Your helper functions (get_barycentric_subdivision_and_filtration, get_multichromatic_tetrahedra, etc.)
 # are assumed to be defined elsewhere in your code.

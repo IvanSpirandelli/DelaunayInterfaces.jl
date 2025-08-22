@@ -1,13 +1,13 @@
-# Standard library and package imports
-using Pkg
+# # Standard library and package imports
+# using Pkg
 
-# Activate the project environment to ensure all dependencies are met
-Pkg.activate("Project.toml")
-Pkg.instantiate()
+# # Activate the project environment to ensure all dependencies are met
+# Pkg.activate("Project.toml")
+# Pkg.instantiate()
 
-# Import necessary libraries for the simulation
-ENV["PYCALL_JL_RUNTIME_PYTHON"] = Sys.which("python3")
-using TopologicalInterfaces
+# # Import necessary libraries for the simulation
+# #ENV["PYCALL_JL_RUNTIME_PYTHON"] = Sys.which("python3")
+# using TopologicalInterfaces
 using GLMakie
 
 #================================================================================#
