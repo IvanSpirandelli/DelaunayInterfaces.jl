@@ -4,5 +4,5 @@ CondaPkg.toml
 .vscode
 .CondaPkg
 python_venv/
-assets/*
 notebooks/
+assets/

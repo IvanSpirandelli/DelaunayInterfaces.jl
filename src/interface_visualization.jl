@@ -377,6 +377,7 @@ function _populate_interface_scene!(
     radii::Vector{Float64};
     show_wireframe = false, 
     show_barycenters = false,
+    show_mc_points = false,
     show_mc_edges = false,
     interface_colormap = :viridis
 )
@@ -396,8 +397,8 @@ function _populate_interface_scene!(
         _populate_scene_with_barycenters!(lscene, bcs_points)
     end
 
-    if show_mc_edges
-        _populate_scene_with_multicolored_edges(lscene, points, labels, radii)
+    if show_mc_edges || show_mc_points
+        _populate_scene_with_multicolored_data(lscene, points, labels, radii; show_mc_edges=show_mc_edges, show_mc_points=show_mc_points)
     end
 end
 
@@ -409,19 +410,28 @@ function _populate_scene_with_barycenters!(scene, bcs_points; markersize=15)
     end
 end
 
-function _populate_scene_with_multicolored_edges(
+function _populate_scene_with_multicolored_data(
     lscene::LScene, 
     points::Vector{Vector{Float64}}, 
     labels::Vector{Int}, 
-    radii::Vector{Float64},
+    radii::Vector{Float64};
+    show_mc_points::Bool = false,
+    show_mc_edges::Bool = false
 )
     color_map = let
         cm = cgrad(:Accent_6, 6, categorical=true)
         Dict(1 => cm[1], 2 => cm[2], 3 => cm[3], 4 => cm[6])
     end
     
-    mc_tets = length(radii) == length(labels) ? get_multichromatic_tetrahedra(points, labels, radii) : get_multichromatic_tetrahedra(points, labels)
-    edge_points, edge_colors = _prepare_mc_edge_visuals(points, labels, mc_tets, color_map)
-    
-    linesegments!(lscene, edge_points, color=edge_colors, linewidth=2)
+    if show_mc_points
+        # Plot multicolored points
+        scatter!(lscene, [Point3f(p) for p in points], color=[color_map[l] for l in labels], strokecolor=:black, strokewidth=1)
+    end
+
+    if show_mc_edges
+        mc_tets = length(radii) == length(labels) ? get_multichromatic_tetrahedra(points, labels, radii) : get_multichromatic_tetrahedra(points, labels)
+        edge_points, edge_colors = _prepare_mc_edge_visuals(points, labels, mc_tets, color_map)
+        
+        linesegments!(lscene, edge_points, color=edge_colors, linewidth=2)
+    end
 end

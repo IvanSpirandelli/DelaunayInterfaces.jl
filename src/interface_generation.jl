@@ -49,7 +49,7 @@ function get_or_create_bc_simplex_id_and_val!(partitioning::Vector{Vector{Int}},
         id = length(uob_to_barycenter_simplices) + 1
         if length(partitioning) == 2
             part_one, part_two = partitioning
-            val = euclidean(get_barycenter(points, part_one), get_barycenter(points, part_two)) / 2.0
+            val = euclidean(get_barycenter(points, part_one), get_barycenter(points, part_two)) #/ 2.0
         elseif length(partitioning) == 3
             part_one, part_two, part_three = partitioning
             a = euclidean(get_barycenter(points, part_one), get_barycenter(points, part_two))
