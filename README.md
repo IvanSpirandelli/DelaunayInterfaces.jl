@@ -1,4 +1,4 @@
-TopologicalInterfaces.jl constructs a surface between differently *colored* subsets of points. The following image illustrates the construction for possible variations of colorings of a tetrahedron:
+TopologicalInterfaces.jl constructs a surface between differently *colored* simplices of a weighted Alpha complex constructed on a given colored point set. The following image illustrates the construction for possible variations of colorings of a tetrahedron:
 <img src="./images/tetrahedra.png" alt="Tetrahedra" width="600"/>
 
 The interface surface is triangulated by construction. The vertices are placed at the midpoints between the barycenters of multicolored vertices/edges/triangles. The colors on the interface surface illustrate an assigned value based on the distance between the barycenters. The values are extended to the edges and triangles as an upper star filtration.
