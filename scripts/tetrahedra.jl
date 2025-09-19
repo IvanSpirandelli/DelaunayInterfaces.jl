@@ -1,3 +1,7 @@
+using GLMakie
+using GLMakie.Makie.GeometryBasics
+using GLMakie.Colors
+
 fig = Figure()
 
 interface_colormap = :viridis

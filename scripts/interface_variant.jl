@@ -15,20 +15,12 @@ gl_A = GridLayout(fig[1,1])
 scene_A = LScene(gl_A[1, 1], show_axis = false)
 TopologicalInterfaces._populate_molecules_scene!(scene_A, points, labels, radii; molecules_colormap=molecules_colormap)
 
-gl_B = GridLayout(fig[2,1])
+gl_B = GridLayout(fig[1,2])
 scene_B = LScene(gl_B[1, 1], show_axis = false)
 TopologicalInterfaces._populate_interface_scene!(scene_B, points, labels, inflated_radii; interface_colormap=interface_colormap)
 
-gl_C = GridLayout(fig[1:2,2:3])
-scene_C = LScene(gl_C[1, 1], show_axis = false)
-indices = findall(x -> x == 1, labels)
-subset_points = points[indices]
-subset_labels = labels[indices]
-subset_radii = radii[indices]
-TopologicalInterfaces._populate_molecules_scene!(scene_C, subset_points, subset_labels, subset_radii; molecules_colormap=single_colormap)
-TopologicalInterfaces._populate_interface_scene!(scene_C, points, labels, inflated_radii; interface_colormap=interface_colormap)
 
-for (label, layout) in zip(["A", "B", "C"], [gl_A, gl_B, gl_C])
+for (label, layout) in zip(["A", "B"], [gl_A, gl_B])
     Label(layout[1, 1, TopLeft()], label,
         fontsize = 36,
         font = :bold,
