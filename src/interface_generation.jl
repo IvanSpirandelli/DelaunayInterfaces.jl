@@ -1,34 +1,54 @@
 using Distances
 
-function get_multichromatic_tetrahedra(points::Vector{Vector{Float64}}, labels::Vector{Int})
-    # This conversion is now guaranteed to be a standard NumPy float array
+function get_multicolored_tetrahedra(points::Vector{Vector{Float64}}, color_labels::Vector{Int}, radii::Vector{Float64}, weighted::Bool = true, alpha::Bool = true)
+    if weighted
+        if alpha
+            get_multicolored_tetrahedra_of_weighted_alpha_complex(points, color_labels, radii)
+        else
+            get_multicolored_tetrahedra_of_weighted_delaunay_complex(points, color_labels, radii)
+        end
+    else
+        get_multicolored_tetrahedra_of_delaunay_complex(points, color_labels)
+    end
+end
+
+function get_multicolored_tetrahedra_of_delaunay_complex(points::Vector{Vector{Float64}}, color_labels::Vector{Int})
     points_np = np[].asarray(hcat(points...)')
 
-    # The 'v' from Python will be 0-based. Add 1 to access the Julia 'labels' array.
-    is_multi(vs) = length(Set(labels[pyconvert(Int, v) + 1] for v in vs)) >= 2
+    # The 'v' from Python will be 0-based. Add 1 to access the Julia 'color_labels' array.
+    is_multi(vs) = length(Set(color_labels[pyconvert(Int, v) + 1] for v in vs)) >= 2
 
     tetrahedra_0_based = [vs for (vs, fs) in diode[].fill_alpha_shapes(points_np) if length(vs) == 4 && is_multi(vs)]
     # Convert the final list of tetrahedra to 1-based indexing for use in Julia
     return [pyconvert(Vector{Int}, t) .+ 1 for t in tetrahedra_0_based]
 end
 
-# This will return the multichromatic tetrahedra of the weighted Alpha complex as defined by the points and the squared radii.
-function get_multichromatic_tetrahedra(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64})
+function get_multicolored_tetrahedra_of_weighted_delaunay_complex(points::Vector{Vector{Float64}}, color_labels::Vector{Int}, radii::Vector{Float64})
     weighted_points = [[p[1], p[2], p[3], r^2] for (p,r) in zip(points, radii)]
-
-    # Convert points to a NumPy array
     points_np = np[].asarray(hcat(weighted_points...)')
     
-    # The 'v' from Python will be 0-based. Add 1 to access the Julia 'labels' array.
-    is_multi(vs) = length(Set(labels[pyconvert(Int, v) + 1] for v in vs)) >= 2
+    # The 'v' from Python will be 0-based. Add 1 to access the Julia 'color_labels' array.
+    is_multi(vs) = length(Set(color_labels[pyconvert(Int, v) + 1] for v in vs)) >= 2
+    tetrahedra_0_based = [vs for (vs, fvs) in diode[].fill_weighted_alpha_shapes(points_np) if length(vs) == 4 && is_multi(vs)]
+
+    # Convert to 1-based indexing
+    return [[pyconvert(Int, e) for e in t] .+ 1 for t in tetrahedra_0_based]
+end
+
+function get_multicolored_tetrahedra_of_weighted_alpha_complex(points::Vector{Vector{Float64}}, color_labels::Vector{Int}, radii::Vector{Float64})
+    weighted_points = [[p[1], p[2], p[3], r^2] for (p,r) in zip(points, radii)]
+    points_np = np[].asarray(hcat(weighted_points...)')
+    
+    # The 'v' from Python will be 0-based. Add 1 to access the Julia 'color_labels' array.
+    is_multi(vs) = length(Set(color_labels[pyconvert(Int, v) + 1] for v in vs)) >= 2
     tetrahedra_0_based = [vs for (vs, fvs) in diode[].fill_weighted_alpha_shapes(points_np) if length(vs) == 4 && pyconvert(Float64, fvs) <= 0.0 && is_multi(vs)]
 
     # Convert to 1-based indexing
     return [[pyconvert(Int, e) for e in t] .+ 1 for t in tetrahedra_0_based]
 end
 
-function get_chromatic_partitioning(tet, labels::Vector{Int})
-    divs = [labels[v] for v in tet]
+function get_chromatic_partitioning(tet, color_labels::Vector{Int})
+    divs = [color_labels[v] for v in tet]
     parts = Dict(k => Vector{Int}([]) for k in unique(divs))
     for (i, d) in enumerate(divs)
         push!(parts[d], tet[i])
@@ -103,20 +123,24 @@ function _extend_barycenter_triangulation_scaffold!(barycenters, vertices, edges
             push!(barycenters, bc)
         end
     end
-    #barycenters = [barycenters; new_barycenters[created]]
 
     for (i, j) in [(i,j) for (i, c1) in enumerate(mc_combinations) for (j, c2) in enumerate(mc_combinations) if c1 != c2 && issubset(c1, c2)]
         push!(edges, (sort!([vertices[i][1], vertices[j][1]]), minimum([vertices[i][2], vertices[j][2]])))
     end
 end
 
-function get_barycentric_subdivision_and_filtration(points::Vector{Vector{Float64}}, labels::Vector{Int}, radii::Vector{Float64} = Vector{Float64}())
-    mc_tets = length(radii) == length(labels) ? get_multichromatic_tetrahedra(points, labels, radii) : get_multichromatic_tetrahedra(points, labels)
+function get_barycentric_subdivision_and_filtration(points::Vector{Vector{Float64}}, color_labels::Vector{Int}, radii::Vector{Float64} = Vector{Float64}(), weighted::Bool = true, alpha::Bool = true)
+    @assert length(color_labels) == length(points) "Each point must have a corresponding color_label"
+    if weighted
+        @assert length(radii) == length(color_labels) == length(points) "Each point must have an assigned radius to compute weighted complexes."
+    end
+    
+    mc_tets = get_multicolored_tetrahedra(points::Vector{Vector{Float64}}, color_labels::Vector{Int}, radii::Vector{Float64}, weighted::Bool, alpha::Bool)
     barycenters = Vector{Vector{Float64}}([])
     filtration = Set{Tuple{Vector{Int32}, Float64}}([])
     uob_to_barycenter_simplices = Dict{Any, Any}()
     for vs in mc_tets
-        parts = get_chromatic_partitioning(vs, labels)
+        parts = get_chromatic_partitioning(vs, color_labels)
         vertices = Vector{Tuple{Int, Float64}}([])
         edges = Vector{Tuple{Vector{Int}, Float64}}([])
         triangles = Vector{Tuple{Vector{Int}, Float64}}([])
