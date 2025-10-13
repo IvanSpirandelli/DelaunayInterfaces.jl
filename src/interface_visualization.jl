@@ -10,16 +10,19 @@ function get_interface_and_point_cloud_figure(
     show_axis = false, 
     show_wireframe = false, 
     interface_colormap = :viridis,
-    point_cloud_colormap = :Accent_6
+    point_cloud_colormap = :Dark2_4
     )
     f = Figure()
-    interface_gl = GridLayout(f[1,1])
+
+
+    point_cloud_gl = GridLayout(f[1,1])
+    point_cloud_lscene = LScene(point_cloud_gl[1,1], show_axis = show_axis)
+    draw_point_cloud_to_scene!(point_cloud_lscene, points, color_labels, radii; point_cloud_colormap)
+
+    interface_gl = GridLayout(f[1,2])
     interface_lscene = LScene(interface_gl[1,1], show_axis = show_axis)
     draw_interface_to_scene!(interface_lscene, interface_surface; show_wireframe, interface_colormap)
 
-    point_cloud_gl = GridLayout(f[1,2])
-    point_cloud_lscene = LScene(point_cloud_gl[1,1], show_axis = show_axis)
-    draw_point_cloud_to_scene!(point_cloud_lscene, points, color_labels, radii; point_cloud_colormap)
     for (label, layout) in zip(["A", "B"], [interface_gl, point_cloud_gl])
         Label(layout[1, 1, TopLeft()], label,
             fontsize = 36,
@@ -133,7 +136,7 @@ function get_point_cloud_figure(
     color_labels::Vector{Int}, 
     radii::Vector{Float64} = Vector{Float64}(); 
     show_axis = false, 
-    point_cloud_colormap = :Accent_6
+    point_cloud_colormap = :Dark2_4
     )
     f = Figure()
     lscene = LScene(f[1,1], show_axis = show_axis)
@@ -151,24 +154,19 @@ function draw_point_cloud_to_scene!(
 )
     meshscatter!(lscene, 
         [Point3f(p) for p in points], 
-        marker = Sphere(Point3f(0), 1),
         markersize = radii,
-        color = color_labels,
-        colormap = point_cloud_colormap
+        color=color_labels,
+        colormap = point_cloud_colormap,
     ) 
 end
 
 function _draw_multicolored_points_to_scene!(
     lscene::LScene, 
     points::Vector{Vector{Float64}}, 
-    color_labels::Vector{Int}
+    color_labels::Vector{Int};
+    point_cloud_colormap = :Dark2_4
 )
-    color_map = let
-        cm = cgrad(:Accent_6, 6, categorical=true)
-        Dict(1 => cm[1], 2 => cm[2], 3 => cm[3], 4 => cm[6])
-    end
-    
-    scatter!(lscene, [Point3f(p) for p in points], color=[color_map[l] for l in color_labels], strokecolor=:black, strokewidth=1)
+    scatter!(lscene, [Point3f(p) for p in points], color=cgrad(point_cloud_colormap, 4, categorical=true)[color_labels], strokecolor=:black, strokewidth=1)
 end
 
 function _draw_multicolored_edges_to_scene!(
@@ -177,9 +175,10 @@ function _draw_multicolored_edges_to_scene!(
     color_labels::Vector{Int}, 
     radii::Vector{Float64}, 
     weighted::Bool, 
-    alpha::Bool
+    alpha::Bool;
+    point_cloud_colormap = :Dark2_4
     )
-    edge_points, edge_colors = _get_multicolored_edge_data(points, color_labels, radii, weighted, alpha)
+    edge_points, edge_colors = _get_multicolored_edge_data(points, color_labels, radii, weighted, alpha; point_cloud_colormap=point_cloud_colormap)
     linesegments!(lscene, edge_points, color=edge_colors, linewidth=2)
 end
 
@@ -188,13 +187,9 @@ function _get_multicolored_edge_data(
     color_labels::Vector{Int}, 
     radii::Vector{Float64}, 
     weighted::Bool, 
-    alpha::Bool
+    alpha::Bool;
+    point_cloud_colormap = :Dark2_4
 )
-    color_map = let
-        cm = cgrad(:Accent_6, 6, categorical=true)
-        Dict(1 => cm[1], 2 => cm[2], 3 => cm[3], 4 => cm[6])
-    end
-
     mc_tets = get_multicolored_tetrahedra(points, color_labels, radii, weighted, alpha)
     # Helper to get all 6 edges from a tetrahedron's vertex indices
     get_edges(tet) = [(tet[1], tet[2]), (tet[1], tet[3]), (tet[1], tet[4]), 
@@ -204,7 +199,12 @@ function _get_multicolored_edge_data(
     points3f = [Point3f(p) for p in points]
 
     edge_points = Point3f[]
-    edge_colors = RGBf[]
+    edge_colors = RGBA[]
+
+    color_map = let
+        cm = cgrad(point_cloud_colormap, 4, categorical=true)
+        Dict(1 => cm[1], 2 => cm[2], 3 => cm[3], 4 => cm[4])
+    end
 
     for tet in mc_tets
         for (p1_idx, p2_idx) in get_edges(tet)
@@ -228,27 +228,56 @@ function _draw_barycenters_to_scene!(scene, bcs_points; markersize=15)
     end
 end
 
-function _generate_colored_mesh(interface_surface::InterfaceSurface)
-        # Extract faces (triangles) and vertex colors from the filtration data
-        faces = [TriangleFace(e[1]) for e in interface_surface.filtration if length(e[1]) == 3]
-        mesh = GeometryBasics.Mesh([Point3f(v) for v in interface_surface.vertices], faces)
+function _generate_colored_mesh(interface_surface::InterfaceSurface, max_value = Inf)
+    # Extract faces (triangles) and vertex colors from the filtration data
+    faces = [TriangleFace(e[1]) for e in interface_surface.filtration if length(e[1]) == 3 && e[2] <= max_value]
+    mesh = GeometryBasics.Mesh([Point3f(v) for v in interface_surface.vertices], faces)
 
-        mesh_colors = [e[2] for e in interface_surface.filtration if length(e[1]) == 1]
-        return mesh, mesh_colors
+    mesh_colors = [e[2] for e in interface_surface.filtration if length(e[1]) == 1]
+    return mesh, mesh_colors
+end
+
+function get_interface_filtration_figure(
+    interface_surface::InterfaceSurface;
+    show_wireframe::Bool = false,
+    interface_surface_colormap = :viridis
+)
+    levels = sort!(unique([e[2] for e in interface_surface.filtration]))
+    meshes_and_colors = [_generate_colored_mesh(interface_surface, lvl) for lvl in levels]
+    all_meshes = [e[1] for e in meshes_and_colors]
+    all_mesh_colors = [e[2] for e in meshes_and_colors]
+
+    f = Figure(fontsize=12)
+    sl_i = Slider(f[2, 1], range=1:length(levels), startvalue=length(levels))
+    slider_value = sl_i.value
+    cgl = GridLayout(f[1,1])
+    i_sc = LScene(cgl[1, 1], show_axis=false, scenekw=(lights=[AmbientLight(RGBf(1.0, 1.0, 1.0))],))
+
+    # Observables for interactive data
+    current_mesh = lift(idx -> all_meshes[idx], slider_value)
+    current_mesh_colors = lift(idx -> all_mesh_colors[idx], slider_value)
+    final_colorrange = (minimum(all_mesh_colors[end]), maximum(all_mesh_colors[end]))
+    
+    # Plot interface mesh
+    mesh!(i_sc, current_mesh, color=current_mesh_colors, colorrange=final_colorrange, colormap=interface_surface_colormap)
+    if show_wireframe
+        wireframe!(i_sc, current_mesh, color=:white, linewidth=1)
+    end
+    f
 end
 
 
-function visualize_interface_sequence(
+function get_interface_sequence_figure(
     interface_surfaces::Vector{InterfaceSurface},
     points_sequence::Vector{Vector{Vector{Float64}}}, 
-    labels_sequence::Vector{Vector{Int}},
+    color_labels_sequence::Vector{Vector{Int}},
     radii_sequence::Vector{Vector{Float64}};
     show_wireframe::Bool = false,
     show_multicolored_points::Bool = false,
     show_multicolored_edges::Bool = false,
     global_colorrange::Bool = false,
     interface_surface_colormap = :viridis,
-    point_cloud_colormap = :Accent_6
+    point_cloud_colormap = :Dark2_4
 )
     n_interfaces = length(interface_surfaces)
     colored_meshes = [_generate_colored_mesh(is) for is in interface_surfaces]
@@ -257,21 +286,11 @@ function visualize_interface_sequence(
 
     all_individual_colorranges = [(minimum(mesh_colors), maximum(mesh_colors)) for mesh_colors in all_mesh_colors]
 
-    all_point_colors = show_multicolored_points ? Vector{Vector{RGBf}}(undef, n_interfaces) : []
     all_edge_points = show_multicolored_edges ? Vector{Vector{Point3f}}(undef, n_interfaces) : []
     all_edge_colors = show_multicolored_edges ? Vector{Vector{RGBf}}(undef, n_interfaces) : []
-
-    point_edge_color_map = let
-        cm = cgrad(point_cloud_colormap, 6, categorical=true)
-        Dict(1 => cm[1], 2 => cm[2], 3 => cm[3], 4 => cm[6])
-    end
-
-    if show_multicolored_points
-        all_point_colors = [[point_edge_color_map[l] for l in labels] for labels in labels_sequence]
-    end
         
     if show_multicolored_edges
-        for (i, ((points, labels), (radii, interface))) in enumerate(zip(zip(points_sequence, labels_sequence), zip(radii_sequence, interface_surfaces)))
+        for (i, ((points, labels), (radii, interface))) in enumerate(zip(zip(points_sequence, color_labels_sequence), zip(radii_sequence, interface_surfaces)))
             edge_points, edge_colors = _get_multicolored_edge_data(points, labels, radii, interface.weighted, interface.alpha)
             all_edge_points[i] = edge_points
             all_edge_colors[i] = edge_colors
@@ -310,7 +329,7 @@ function visualize_interface_sequence(
     # Plot points if requested
     if show_multicolored_points
         current_points = lift(idx -> [Point3f(e) for e in points_sequence[idx]], slider_value)
-        current_point_colors = lift(idx -> all_point_colors[idx], slider_value)
+        current_point_colors = lift(idx -> cgrad(point_cloud_colormap, 4, categorical=true)[color_labels_sequence[idx]], slider_value)
         scatter!(i_sc, current_points, color=current_point_colors, markersize=15, strokewidth=1, strokecolor=:black)
     end
     
