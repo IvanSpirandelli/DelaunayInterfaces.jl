@@ -61,6 +61,7 @@ function display_all_tetrahedra()
             halign = :right)
     end
 
+
     display(fig)
 end
 
