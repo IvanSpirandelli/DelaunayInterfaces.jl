@@ -14,7 +14,6 @@ function get_interface_and_point_cloud_figure(
     )
     f = Figure()
 
-
     point_cloud_gl = GridLayout(f[1,1])
     point_cloud_lscene = LScene(point_cloud_gl[1,1], show_axis = show_axis)
     draw_point_cloud_to_scene!(point_cloud_lscene, points, color_labels, radii; point_cloud_colormap)

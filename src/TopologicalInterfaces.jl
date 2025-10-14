@@ -27,6 +27,9 @@ function InterfaceSurface(points::Vector{Vector{Float64}}, color_labels::Vector{
 end
 
 function InterfaceSurface(points::Vector{Vector{Float64}}, color_labels::Vector{Int}, radii::Vector{Float64}, alpha::Bool = true)
+    if length(radii) == 0
+        return InterfaceSurface(points, color_labels)
+    end
     vertices, filtration = get_barycentric_subdivision_and_filtration(points, color_labels, radii, true, alpha)
     InterfaceSurface(vertices, filtration, true, alpha)
 end
