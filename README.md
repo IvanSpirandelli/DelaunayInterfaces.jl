@@ -4,6 +4,6 @@ TopologicalInterfaces.jl constructs a surface based on differently *colored* tet
 
 The interface surface is triangulated by construction. The vertices are placed at the midpoints between the barycenters of multicolored vertices/edges/triangles. The colors on the interface surface illustrate an assigned value based on the distance between the barycenters. The values are extended to the edges and triangles as an upper star filtration.
 
-Potential applications are the construction of protein-protein interfaces like shown below for a dimer of a [Heptatitis B core protein](https://www.rcsb.org/structure/4BMG)
+Potential applications are the construction of protein-protein interfaces like shown below for a dimer of the [Heptatitis B core protein](https://www.rcsb.org/structure/4BMG)
 
 <img src="./images/interface.png" alt="Interface" width="600"/>
