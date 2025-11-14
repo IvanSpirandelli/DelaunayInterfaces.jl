@@ -1,4 +1,4 @@
-module TopologicalInterfaces
+module DelaunayInterfaces
 
 using PythonCall
 

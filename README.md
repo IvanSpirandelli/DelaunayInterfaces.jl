@@ -1,4 +1,4 @@
-TopologicalInterfaces.jl constructs a surface based on differently *colored* tetrahedra of a weighted Alpha (or Delaunay) complex, constructed on a given colored point set. The following image illustrates the construction for possible variations of colorings of a tetrahedron:
+DelaunayInterfaces.jl constructs a surface based on differently *colored* tetrahedra of a weighted Alpha (or Delaunay) complex, constructed on a given colored point set. The following image illustrates the construction for possible variations of colorings of a tetrahedron:
 
 <img src="./images/tetrahedra.png" alt="Tetrahedra" width="600"/>
 

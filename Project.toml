@@ -1,4 +1,4 @@
-name = "TopologicalInterfaces"
+name = "DelaunayInterfaces"
 uuid = "0fa5e18a-6159-4dfd-8535-a2ced8d81a48"
 authors = ["Ivan Spirandelli <spirandelli@uni-potsdam.de>"]
 version = "0.1.0"
