@@ -1,14 +1,6 @@
 module DelaunayInterfaces
 
-using PythonCall
-
-const diode = Ref{Py}()
-const np = Ref{Py}()
-
-function __init__()
-    diode[] = pyimport("diode")
-    np[] = pyimport("numpy")
-end
+using PyCall
 
 include("interface_generation.jl")
 

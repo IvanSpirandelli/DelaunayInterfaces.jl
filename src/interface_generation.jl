@@ -13,38 +13,69 @@ function get_multicolored_tetrahedra(points::Vector{Vector{Float64}}, color_labe
 end
 
 function get_multicolored_tetrahedra_of_delaunay_complex(points::Vector{Vector{Float64}}, color_labels::Vector{Int})
-    points_np = np[].asarray(hcat(points...)')
+    py"""
+    import numpy as np
+    import diode
+    def get_multicolored_tetrahedra_of_delaunay_complex(points, color_labels):
+        points_np = np.asarray(points)
 
-    # The 'v' from Python will be 0-based. Add 1 to access the Julia 'color_labels' array.
-    is_multi(vs) = length(Set(color_labels[pyconvert(Int, v) + 1] for v in vs)) >= 2
+        # Use a lambda function for a concise check
+        is_multi = lambda vs: len(set(color_labels[v] for v in vs)) >= 2
 
-    tetrahedra_0_based = [vs for (vs, fs) in diode[].fill_alpha_shapes(points_np) if length(vs) == 4 && is_multi(vs)]
-    # Convert the final list of tetrahedra to 1-based indexing for use in Julia
-    return [pyconvert(Vector{Int}, t) .+ 1 for t in tetrahedra_0_based]
+        # Use Python's 'and' operator and 'len()' function
+        tetrahedra_0_based = [
+            vs for (vs, fs) in diode.fill_alpha_shapes(points_np)
+            if len(vs) == 4 and is_multi(vs)
+        ]
+        # Convert the final list of tetrahedra to 1-based indexing for use in Julia
+        return [[i + 1 for i in t] for t in tetrahedra_0_based]
+    """
+    [e for e in eachrow(py"get_multicolored_tetrahedra_of_delaunay_complex"(hcat(points...)', color_labels))]
 end
 
 function get_multicolored_tetrahedra_of_weighted_delaunay_complex(points::Vector{Vector{Float64}}, color_labels::Vector{Int}, radii::Vector{Float64})
-    weighted_points = [[p[1], p[2], p[3], r^2] for (p,r) in zip(points, radii)]
-    points_np = np[].asarray(hcat(weighted_points...)')
-    
-    # The 'v' from Python will be 0-based. Add 1 to access the Julia 'color_labels' array.
-    is_multi(vs) = length(Set(color_labels[pyconvert(Int, v) + 1] for v in vs)) >= 2
-    tetrahedra_0_based = [vs for (vs, fvs) in diode[].fill_weighted_alpha_shapes(points_np) if length(vs) == 4 && is_multi(vs)]
+    py"""
+    import numpy as np
+    import diode
+    def get_multicolored_tetrahedra_of_weighted_delaunay_complex(points, color_labels):
+        points_np = np.asarray(points)
 
-    # Convert to 1-based indexing
-    return [[pyconvert(Int, e) for e in t] .+ 1 for t in tetrahedra_0_based]
+        # Use a lambda function for a concise check
+        is_multi = lambda vs: len(set(color_labels[v] for v in vs)) >= 2
+
+        # Use Python's 'and' operator and 'len()' function
+        tetrahedra_0_based = [
+            vs for (vs, fs) in diode.fill_weighted_alpha_shapes(points_np)
+            if len(vs) == 4 and is_multi(vs)
+        ]
+        
+        return [[i + 1 for i in t] for t in tetrahedra_0_based]
+    """
+    weighted_points = [[p[1], p[2], p[3], r^2] for (p,r) in zip(points, radii)]
+    [e for e in eachrow(py"get_multicolored_tetrahedra_of_weighted_delaunay_complex"(hcat(weighted_points...)', color_labels))]
 end
 
-function get_multicolored_tetrahedra_of_weighted_alpha_complex(points::Vector{Vector{Float64}}, color_labels::Vector{Int}, radii::Vector{Float64})
-    weighted_points = [[p[1], p[2], p[3], r^2] for (p,r) in zip(points, radii)]
-    points_np = np[].asarray(hcat(weighted_points...)')
-    
-    # The 'v' from Python will be 0-based. Add 1 to access the Julia 'color_labels' array.
-    is_multi(vs) = length(Set(color_labels[pyconvert(Int, v) + 1] for v in vs)) >= 2
-    tetrahedra_0_based = [vs for (vs, fvs) in diode[].fill_weighted_alpha_shapes(points_np) if length(vs) == 4 && pyconvert(Float64, fvs) <= 0.0 && is_multi(vs)]
 
-    # Convert to 1-based indexing
-    return [[pyconvert(Int, e) for e in t] .+ 1 for t in tetrahedra_0_based]
+function get_multicolored_tetrahedra_of_weighted_alpha_complex(points::Vector{Vector{Float64}}, color_labels::Vector{Int}, radii::Vector{Float64})
+    py"""
+    import numpy as np
+    import diode
+    def get_multicolored_tetrahedra_of_weighted_alpha_complex(points, color_labels):
+        points_np = np.asarray(points)
+
+        # Use a lambda function for a concise check
+        is_multi = lambda vs: len(set(color_labels[v] for v in vs)) >= 2
+
+        # Use Python's 'and' operator and 'len()' function
+        tetrahedra_0_based = [
+            vs for (vs, fs) in diode.fill_weighted_alpha_shapes(points_np)
+            if len(vs) == 4 and is_multi(vs) and fs <= 0
+        ]
+        
+        return [[i + 1 for i in t] for t in tetrahedra_0_based]
+    """
+    weighted_points = [[p[1], p[2], p[3], r^2] for (p,r) in zip(points, radii)]
+    [e for e in eachrow(py"get_multicolored_tetrahedra_of_weighted_alpha_complex"(hcat(weighted_points...)', color_labels))]
 end
 
 function get_chromatic_partitioning(tet, color_labels::Vector{Int})
